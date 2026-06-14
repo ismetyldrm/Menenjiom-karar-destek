@@ -1,0 +1,44 @@
+## --- .NET / C# ---
+[Bb]in/
+[Oo]bj/
+*.user
+*.sln.doccache
+
+# Derleme sırasında oluşan geçici dosyalar
+*.exe
+*.dll
+*.pdb
+*.suo
+*.user
+*.userosscache
+*.sln.doccache
+*.vshost.exe*
+
+# Publish klasörü
+publish/
+
+# Google Cloud Service Account anahtar dosyan (Önemli!)
+google-creds.json
+# Veritabanı bağlantı şifreleri ve gizli API anahtarları
+appsettings.Development.json
+appsettings.Local.json
+secrets.json
+
+## --- DATABASE ---
+# SQLite veya yerel veritabanı dosyaları
+*.db
+*.sqlite
+*.db-shm
+*.db-wal
+
+## --- IDE AYARLARI ---
+.vs/
+.idea/
+.vscode/
+.vscode/launch.json
+.vscode/tasks.json
+
+## --- LOGLAR VE GEÇİCİ DOSYALAR ---
+*.log
+logs/
+temp/

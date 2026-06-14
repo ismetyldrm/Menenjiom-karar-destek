@@ -1,0 +1,55 @@
+## --- FLUTTER / DART STANDART ---
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+# İnternetten çekilen paket listesi
+.flutter-plugins
+.flutter-plugins-dependencies
+
+## --- ANDROID ---
+.gradle/
+local.properties
+*.keystore
+*.jks
+# Android Studio klasörü içindeki kişisel ayarlar
+.idea/caches/
+.idea/libraries/
+.idea/modules.xml
+.idea/workspace.xml
+android/app/debug
+android/app/profile
+android/app/release
+
+# Windows'a özel 
+windows/flutter/ephemeral/
+windows/flutter/generated_config.cmake
+
+## --- IOS ---
+.pocs/
+Pods/
+*.xcworkspace
+*.xcuserstate
+# iOS derleme ve sertifika ayarları
+ios/Flutter/.last_build_id
+ios/Flutter/Generated.xcconfig
+ios/Flutter/flutter_export_environment.sh
+
+## --- SES VE MEDYA (PROJENE ÖZEL) ---
+# Test sırasında oluşan ses kayıtlarını git'e gönderme
+*.m4a
+*.wav
+*.mp3
+
+## --- IDE AYARLARI ---
+.idea/
+.vscode/
+*.iml
+
+## --- SİSTEM DOSYALARI ---
+.DS_Store
+Thumbs.db
+
+# OpenAI API key
+.env

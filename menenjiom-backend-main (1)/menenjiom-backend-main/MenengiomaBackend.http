@@ -1,0 +1,6 @@
+@MenengiomaBackend_HostAddress = http://localhost:5038
+
+GET {{MenengiomaBackend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,4 @@
+mr_dilimleri/
+__pycache__/
+temp_mri.nii.gz
+output_mr.jpg
