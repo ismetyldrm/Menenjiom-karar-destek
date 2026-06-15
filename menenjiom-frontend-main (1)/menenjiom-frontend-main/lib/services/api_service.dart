@@ -98,7 +98,9 @@ class ApiService {
       var request = http.MultipartRequest('POST', uri);
 
       // 2. Kapı görevlisine (Backend) kartını göster
-      request.headers['Authorization'] = 'Bearer $token';
+      if (token != null && token.isNotEmpty) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
 
       if (fileBytes != null) {
         // web or caller provided bytes
@@ -109,6 +111,9 @@ class ApiService {
           contentType: MediaType('application', 'zip'),
         ));
       } else if (filePath != null) {
+        if (kIsWeb) {
+          throw Exception('Web üzerinde dosya yolundan analiz desteklenmiyor. Lütfen ZIP dosyasını tekrar seçin.');
+        }
         request.files.add(await http.MultipartFile.fromPath('mriZipFile', filePath));
       } else {
         throw Exception('No file provided for analyzeMri');
@@ -120,8 +125,15 @@ class ApiService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       } else {
-        print('Yetkisiz erişim veya hata: ${response.statusCode}');
-        return null;
+        print('Yetkisiz erişim veya hata: ${response.statusCode} -> ${response.body}');
+        try {
+          return json.decode(response.body);
+        } catch (_) {
+          return {
+            'status': 'error',
+            'message': 'Sunucu hatası: ${response.statusCode}'
+          };
+        }
       }
     } catch (e) {
       print('Bağlantı Hatası: $e');

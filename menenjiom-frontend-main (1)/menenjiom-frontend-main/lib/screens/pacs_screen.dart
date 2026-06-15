@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart'; // rootBundle için eklendi
 import 'dart:math' as math; // math.pi için eklendi
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart';
@@ -13,6 +12,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:file_picker/file_picker.dart';
+import '../src/io_stub.dart' if (dart.library.io) 'dart:io' as io;
 
 import '../services/api_service.dart';
 import '../services/chatgpt_service.dart';
@@ -24,6 +24,8 @@ class PacsScreen extends StatefulWidget {
   final String tcIdentity;
   final String doctorName;
   final String? initialZipPath;
+  final Uint8List? initialZipBytes;
+  final String? initialZipFilename;
   final int? initialStudyId;
 
   const PacsScreen({
@@ -32,6 +34,8 @@ class PacsScreen extends StatefulWidget {
     required this.tcIdentity,
     required this.doctorName,
     this.initialZipPath,
+    this.initialZipBytes,
+    this.initialZipFilename,
     this.initialStudyId,
   });
 
@@ -66,6 +70,8 @@ class _PacsScreenState extends State<PacsScreen> {
   String _recognizedWords = "";
 
   String? _selectedZipPath;
+  Uint8List? _remainingZipBytes;
+  String? _selectedZipFilename;
   String? _maskFilePath;
   bool _showAiMask = false;
 
@@ -87,18 +93,22 @@ class _PacsScreenState extends State<PacsScreen> {
     if (widget.initialZipPath != null) {
       _selectedZipPath = Uri.encodeComponent(widget.initialZipPath!);
     }
+    if (widget.initialZipBytes != null) {
+      _remainingZipBytes = widget.initialZipBytes;
+    }
+    if (widget.initialZipFilename != null) {
+      _selectedZipFilename = widget.initialZipFilename;
+    }
     if (widget.initialStudyId != null) {
       // store if needed later
     }
   }
 
   void _initServices() async {
-    if (kIsWeb || Platform.isAndroid || Platform.isIOS) {
-      try {
-        await _speechToText.initialize();
-      } catch (e) {
-        debugPrint("Yerel STT başlatılamadı: $e");
-      }
+    try {
+      await _speechToText.initialize();
+    } catch (e) {
+      debugPrint("Yerel STT başlatılamadı: $e");
     }
     await _flutterTts.setLanguage("tr-TR");
   }
@@ -217,19 +227,17 @@ class _PacsScreenState extends State<PacsScreen> {
           _lastRecordedFilePath = null;
         });
         if (!kIsWeb) await NativeAudio.startRecording();
-        if (kIsWeb || Platform.isAndroid || Platform.isIOS) {
-          bool available = await _speechToText.initialize();
-          if (available) {
-            await _speechToText.listen(
-              localeId: "tr_TR",
-              onResult: (result) {
-                setState(() {
-                  _recognizedWords = result.recognizedWords;
-                  _reportController.text = _recognizedWords;
-                });
-              },
-            );
-          }
+        bool available = await _speechToText.initialize();
+        if (available) {
+          await _speechToText.listen(
+            localeId: "tr_TR",
+            onResult: (result) {
+              setState(() {
+                _recognizedWords = result.recognizedWords;
+                _reportController.text = _recognizedWords;
+              });
+            },
+          );
         }
       } catch (e) {
         setState(() {
@@ -239,9 +247,7 @@ class _PacsScreenState extends State<PacsScreen> {
       }
     } else {
       try {
-        if (kIsWeb || Platform.isAndroid || Platform.isIOS) {
-          await _speechToText.stop();
-        }
+        await _speechToText.stop();
         String? returnedPath;
         if (!kIsWeb) returnedPath = await NativeAudio.stopRecording();
         setState(() => _isListening = false);
@@ -249,7 +255,7 @@ class _PacsScreenState extends State<PacsScreen> {
         if (returnedPath != null) {
           _lastRecordedFilePath = returnedPath;
           await Future.delayed(const Duration(milliseconds: 1000));
-          final audioFile = File(returnedPath);
+          final audioFile = io.File(returnedPath);
           if (await audioFile.exists()) {
             final bytes = await audioFile.readAsBytes();
             if (bytes.length > 1000) {
@@ -361,7 +367,7 @@ class _PacsScreenState extends State<PacsScreen> {
       setState(() => _isPlayingOriginal = false);
     } else {
       if (!kIsWeb && _lastRecordedFilePath != null) {
-        File audioFile = File(_lastRecordedFilePath!);
+        io.File audioFile = io.File(_lastRecordedFilePath!);
         if (await audioFile.exists()) {
           setState(() => _isPlayingOriginal = true);
           await NativeAudio.playAudio(_lastRecordedFilePath!);
@@ -697,7 +703,7 @@ class _PacsScreenState extends State<PacsScreen> {
                             final name = pickedFile.name;
 
                             if (bytes != null) {
-                              // web or bytes-only upload: make zip available to slice server before preview
+                              // Web or bytes-only upload: make zip available to slice server before preview
                               var uploadResult = await _apiService.uploadZip(bytes, name);
                               if (uploadResult == null || uploadResult['zip_path'] == null) {
                                 setState(() {
@@ -708,58 +714,8 @@ class _PacsScreenState extends State<PacsScreen> {
                               }
 
                               filePath = uploadResult['zip_path'];
-                              setState(() {
-                                _selectedZipPath = Uri.encodeComponent(filePath!);
-                                _maskFilePath = null;
-                                _showAiMask = false;
-                                _isAnalyzing = true;
-                                _analysisResult = null;
-                              });
-
-                              var aiResponse = await _apiService.analyzeMri(
-                                  studyId, null,
-                                  fileBytes: bytes, filename: name);
-
-                              setState(() {
-                                _isAnalyzing = false;
-                                if (aiResponse != null && aiResponse.containsKey('message')) {
-                                  try {
-                                    var data = aiResponse['data'];
-                                    var isMeningioma = data['is_meningioma'] == true;
-                                    var maskPath = data['mask_file_path'];
-                                    var vols = data['volumes_cm3'];
-
-                                    if (isMeningioma) {
-                                      if (maskPath != null) {
-                                        _maskFilePath = Uri.encodeComponent(maskPath.toString());
-                                      }
-                                      if (vols != null) {
-                                        _analysisResult =
-                                            "MENENGIOMA TESPİT EDİLDİ\n\n"
-                                            "Nekrotik Çekirdek: ${vols['ncr']} cm³\n"
-                                            "Ödem (Edema): ${vols['ed']} cm³\n"
-                                            "Aktif Tümör: ${vols['et']} cm³\n"
-                                            "Toplam Hacim: ${vols['total_wt']} cm³";
-                                      } else {
-                                        _analysisResult =
-                                            "Meningiom tespit edildi fakat hacim bilgisi alınamadı.";
-                                      }
-                                    } else {
-                                      _maskFilePath = null;
-                                      _analysisResult =
-                                          data['message'] ??
-                                              "Meningiom bulgusu bulunamadı. Segmentasyon yapılmadı.";
-                                    }
-                                  } catch (e) {
-                                    _analysisResult = "JSON Okuma Hatası.";
-                                  }
-                                } else {
-                                  _analysisResult =
-                                      "Hata: Sunucudan beklenen veri formatı gelmedi.";
-                                }
-                              });
-
-                              return;
+                              _remainingZipBytes = bytes;
+                              _selectedZipFilename = name;
                             } else if (!kIsWeb && pickedFile.path != null) {
                               filePath = pickedFile.path;
                             } else {
@@ -775,37 +731,47 @@ class _PacsScreenState extends State<PacsScreen> {
                             _analysisResult = null;
                           });
 
-                          var aiResponse = await _apiService.analyzeMri(studyId, filePath!);
+                          var aiResponse = await _apiService.analyzeMri(
+                            studyId,
+                            _remainingZipBytes != null ? null : filePath!,
+                            fileBytes: _remainingZipBytes,
+                            filename: _selectedZipFilename,
+                          );
 
                           setState(() {
                             _isAnalyzing = false;
-                            if (aiResponse != null && aiResponse.containsKey('message')) {
+                            if (aiResponse != null) {
                               try {
-                                var data = aiResponse['data'];
-                                var isMeningioma = data['is_meningioma'] == true;
-                                var maskPath = data['mask_file_path'];
-                                var vols = data['volumes_cm3'];
+                                if (aiResponse.containsKey('data')) {
+                                  var data = aiResponse['data'];
+                                  var isMeningioma = data['is_meningioma'] == true;
+                                  var maskPath = data['mask_file_path'];
+                                  var vols = data['volumes_cm3'];
 
-                                if (isMeningioma) {
-                                  if (maskPath != null) {
-                                    _maskFilePath = Uri.encodeComponent(maskPath.toString());
-                                  }
-                                  if (vols != null) {
-                                    _analysisResult =
-                                        "MENENGIOMA TESPİT EDİLDİ\n\n"
-                                        "Nekrotik Çekirdek: ${vols['ncr']} cm³\n"
-                                        "Ödem (Edema): ${vols['ed']} cm³\n"
-                                        "Aktif Tümör: ${vols['et']} cm³\n"
-                                        "Toplam Hacim: ${vols['total_wt']} cm³";
+                                  if (isMeningioma) {
+                                    if (maskPath != null) {
+                                      _maskFilePath = Uri.encodeComponent(maskPath.toString());
+                                    }
+                                    if (vols != null) {
+                                      _analysisResult =
+                                          "MENENGIOMA TESPİT EDİLDİ\n\n"
+                                          "Nekrotik Çekirdek: ${vols['ncr']} cm³\n"
+                                          "Ödem (Edema): ${vols['ed']} cm³\n"
+                                          "Aktif Tümör: ${vols['et']} cm³\n"
+                                          "Toplam Hacim: ${vols['total_wt']} cm³";
+                                    } else {
+                                      _analysisResult =
+                                          "Meningiom tespit edildi fakat hacim bilgisi alınamadı.";
+                                    }
                                   } else {
+                                    _maskFilePath = null;
                                     _analysisResult =
-                                        "Meningiom tespit edildi fakat hacim bilgisi alınamadı.";
+                                        data['message'] ??
+                                            "Meningiom bulgusu bulunamadı.";
                                   }
                                 } else {
-                                  _maskFilePath = null;
-                                  _analysisResult =
-                                      data['message'] ??
-                                          "Meningiom bulgusu bulunamadı. Segmentasyon yapılmadı.";
+                                  _analysisResult = aiResponse['message'] ??
+                                      "Hata: Sunucudan beklenen veri formatı gelmedi.";
                                 }
                               } catch (e) {
                                 _analysisResult = "JSON Okuma Hatası.";

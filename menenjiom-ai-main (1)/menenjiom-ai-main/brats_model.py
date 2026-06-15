@@ -296,7 +296,11 @@ def discover_input_data(folder: str, log_fn=None) -> tuple:
     log = log_fn or (lambda m: None)
     modality_keys = ["t1c", "t1n", "t2f", "t2w"]
 
-    nii_files = sorted(list(folder.glob("*.nii.gz")) + list(folder.glob("*.nii")))
+    skip = {"_preprocessed", "_converted_nifti", "segmentation_output"}
+    nii_files = sorted(
+        p for p in (list(folder.rglob("*.nii.gz")) + list(folder.rglob("*.nii")))
+        if not any(s in p.parts for s in skip)
+    )
     modality_paths = {}
     case_name = None
     

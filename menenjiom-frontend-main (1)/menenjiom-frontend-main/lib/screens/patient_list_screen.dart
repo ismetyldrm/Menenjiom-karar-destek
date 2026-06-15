@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:file_picker/file_picker.dart';
@@ -29,34 +28,6 @@ class _PatientListScreenState extends State<PatientListScreen> {
   int activeDoctors = 0;
   double aiLatency = 1.84;
   List<dynamic> liveAuditLogs = [];
-
-  // KVKK Denetimi için ekrana basılacak gerçekçi sistem logları
-  final List<Map<String, String>> _auditLogs = [
-    {
-      "saat": "20:48:12",
-      "kullanici": "Sistem Admin",
-      "islem": "Yeni Doktor Tanımlama İsteği Gönderildi",
-      "ip": "192.168.1.10"
-    },
-    {
-      "saat": "20:15:34",
-      "kullanici": "Prof. Dr. F. S. Geredelioğlu",
-      "islem": "Hasta TC: 12345678901 - DICOM Tetkiki Açıldı",
-      "ip": "192.168.1.42"
-    },
-    {
-      "saat": "19:42:01",
-      "kullanici": "Sistem",
-      "islem": "MONAI AI Inference Pipeline - Kalibrasyon Tamamlandı",
-      "ip": "localhost"
-    },
-    {
-      "saat": "18:22:15",
-      "kullanici": "Doç. Dr. M. Yılmaz",
-      "islem": "Menenjiom Segmentasyon Raporu PDF Çıktısı Alındı",
-      "ip": "192.168.1.45"
-    },
-  ];
 
   @override
   void initState() {
@@ -842,13 +813,13 @@ class _PatientListScreenState extends State<PatientListScreen> {
           selectedZipPath = uploadResult['zip_path'];
         }
 
-        var aiResponse = await ApiService()
-          .analyzeMri(studyId, filePath, fileBytes: fileBytes, filename: filename);
+        await ApiService().analyzeMri(studyId, filePath,
+            fileBytes: fileBytes, filename: filename);
 
         // 4) Navigate to PACS screen with file preselected (for native) or study only (web)
-      String fName = (patient['firstName'] ?? '').toString();
-      String lName = (patient['lastName'] ?? '').toString();
-      String tc = (patient['tcIdentityNo'] ?? '').toString();
+        String fName = (patient['firstName'] ?? '').toString();
+        String lName = (patient['lastName'] ?? '').toString();
+        String tc = (patient['tcIdentityNo'] ?? '').toString();
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -856,10 +827,14 @@ class _PatientListScreenState extends State<PatientListScreen> {
               patientName: "$fName $lName".trim(),
               tcIdentity: tc,
               doctorName: "Prof. Dr. Fatma Şule Geredelioğlu",
-              initialZipPath: filePath,
+              initialZipPath: selectedZipPath ?? filePath,
+              initialZipBytes: fileBytes,
+              initialZipFilename: filename,
               initialStudyId: studyId,
-              )));
-    } catch (e) {
+            ),
+          ),
+        );
+      } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Yükleme/analiz hatası: $e'),
           backgroundColor: Colors.red));

@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
 using MenengiomaBackend.DTOs;
+using Microsoft.AspNetCore.Http;
 
 namespace MenengiomaBackend.Services
 {
@@ -12,6 +13,7 @@ namespace MenengiomaBackend.Services
         {
             _httpClient = httpClient;
             _httpClient.BaseAddress = new Uri("http://localhost:5000/");
+            _httpClient.Timeout = TimeSpan.FromMinutes(10);
         }
 
         public async Task<AiAnalysisResultDto> AnalyzeMriAsync(IFormFile zipFile)

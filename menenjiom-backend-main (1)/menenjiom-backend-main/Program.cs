@@ -46,8 +46,11 @@ builder.Services.AddScoped<TokenService>(); // Token servisini sisteme tanıtıy
 // 2. Projeye Controller kullanacağımızı söylüyoruz
 builder.Services.AddControllers();
 
-// Yapay Zeka servisini sisteme tanıtıyoruz
-builder.Services.AddHttpClient<AiIntegrationService>();
+// Yapay Zeka servisini sisteme tanıtıyoruz ve uzun süren analizler için zaman aşımı süresini uzatıyoruz
+builder.Services.AddHttpClient<AiIntegrationService>(client =>
+{
+    client.Timeout = TimeSpan.FromMinutes(10);
+});
 
 // YENİ EKLENEN SATIR: Şifre sıfırlama için Email Servisini sisteme tanıtıyoruz
 builder.Services.AddScoped<EmailService>();

@@ -86,6 +86,10 @@ namespace MenengiomaBackend.Controllers
                 var aiResult = await _aiService.AnalyzeMriAsync(mriZipFile);
                 bool isMeningioma = aiResult?.Is_meningioma == true;
 
+                if (aiResult != null){
+                    Console.WriteLine("AI başarılı bir şekilde analiz etti");
+                }
+
                 if (isMeningioma && aiResult?.Volumes_cm3 != null)
                 {
                     newSeriesFile.TumorVolume = (float)aiResult.Volumes_cm3.Total_wt;
@@ -135,6 +139,7 @@ namespace MenengiomaBackend.Controllers
                 newSeriesFile.AiReportContent = $"Analiz Hatası: {ex.Message}";
                 _context.SeriesFiles.Update(newSeriesFile);
                 await _context.SaveChangesAsync();
+                Console.WriteLine("AI analizinde sıkıntı var");
 
                 return StatusCode(500, new { message = $"AI Sunucusu ile iletişim hatası: {ex.Message}" });
             }
