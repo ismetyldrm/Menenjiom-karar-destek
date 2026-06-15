@@ -27,6 +27,9 @@ class PacsScreen extends StatefulWidget {
   final Uint8List? initialZipBytes;
   final String? initialZipFilename;
   final int? initialStudyId;
+  final String? initialMaskPath;
+  final String? initialAnalysisResult;
+  final Function(String?, String?)? onAnalysisCompleted;
 
   const PacsScreen({
     super.key,
@@ -37,6 +40,9 @@ class PacsScreen extends StatefulWidget {
     this.initialZipBytes,
     this.initialZipFilename,
     this.initialStudyId,
+    this.initialMaskPath,         
+    this.initialAnalysisResult,   
+    this.onAnalysisCompleted,
   });
 
   @override
@@ -101,6 +107,13 @@ class _PacsScreenState extends State<PacsScreen> {
     }
     if (widget.initialStudyId != null) {
       // store if needed later
+    }
+    if (widget.initialMaskPath != null) {
+      _maskFilePath = widget.initialMaskPath;
+      _showAiMask = true; // Maskeyi direkt aktif et
+    }
+    if (widget.initialAnalysisResult != null) {
+      _analysisResult = widget.initialAnalysisResult;
     }
   }
 
@@ -755,7 +768,7 @@ class _PacsScreenState extends State<PacsScreen> {
                                     if (vols != null) {
                                       _analysisResult =
                                           "MENENGIOMA TESPİT EDİLDİ\n\n"
-                                          "Nekrotik Çekirdek: ${vols['ncr']} cm³\n"
+                                          "Nekroz Alanı: ${vols['ncr']} cm³\n"
                                           "Ödem (Edema): ${vols['ed']} cm³\n"
                                           "Aktif Tümör: ${vols['et']} cm³\n"
                                           "Toplam Hacim: ${vols['total_wt']} cm³";
@@ -781,6 +794,10 @@ class _PacsScreenState extends State<PacsScreen> {
                                   "Hata: Sunucudan beklenen veri formatı gelmedi.";
                             }
                           });
+                          // --- YENİ EKLENEN KISIM BURAYA GELİYOR ---
+                          if (widget.onAnalysisCompleted != null) {
+                            widget.onAnalysisCompleted!(_maskFilePath, _analysisResult);
+                          }
                         },
                   icon: _isAnalyzing
                       ? const SizedBox(
@@ -792,7 +809,7 @@ class _PacsScreenState extends State<PacsScreen> {
                       : const Icon(Icons.upload_file),
                   label: Text(_isAnalyzing
                       ? "Analiz Ediliyor..."
-                      : "MR SEÇ VE ANALİZ ET"),
+                      : "ANALİZ ET"),
                   style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
                 ),
                 if (_analysisResult != null) ...[

@@ -226,6 +226,135 @@ class _PatientListScreenState extends State<PatientListScreen> {
       ),
     );
   }
+  Future<void> _pickAndAddPatient() async {
+    FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['zip'],
+      withData: true, 
+    );
+
+    if (result != null) {
+      final pickedFile = result.files.single;
+      
+      // --- 1. YENİ: DOSYAYI ANINDA PYTHON'A YÜKLE ---
+      // PACS ekranındaki siyah alanın dolması için dosyayı hemen Python'a atıyoruz
+      var uploadResult = await ApiService().uploadZip(pickedFile.bytes!, pickedFile.name);
+      String? pythonZipPath;
+      if (uploadResult != null && uploadResult['zip_path'] != null) {
+        pythonZipPath = uploadResult['zip_path'];
+      } else {
+        debugPrint("HATA: Python sunucusuna yüklenemedi!");
+      }
+
+      String cleanFileName = pickedFile.name.replaceAll('.zip', '');
+
+      // --- 2. ADIM: Etik kurul gereği varsayılanlar (C# DTO kurallarına uygun) ---
+      String finalPatientName = "Anonim Hasta $cleanFileName";
+      String finalTc = "11111111111"; // Tam 11 hane
+      String finalGender = "E";       // C# MaxLength(1) kuralı için "Belirtilmemiş" yerine "E"
+      String finalBirthDate = "01.01.1990";
+
+      // --- 3. ADIM: Kısmi Anonimlik Filtresi ---
+      Map<String, dynamic>? backendData = {
+         "PatientName": "", 
+         "PatientID": null,
+         "PatientSex": "K",
+         "PatientBirthDate": "15.05.1985"
+      };
+
+      if (backendData != null) {
+        if (backendData['PatientName'] != null && backendData['PatientName'].toString().trim().isNotEmpty) {
+          finalPatientName = backendData['PatientName'];
+        }
+        if (backendData['PatientID'] != null && backendData['PatientID'].toString().trim().length == 11) {
+          finalTc = backendData['PatientID']; 
+        }
+        if (backendData['PatientSex'] != null && backendData['PatientSex'].toString().trim().isNotEmpty) {
+          finalGender = backendData['PatientSex'].toString().substring(0, 1).toUpperCase(); 
+        }
+        if (backendData['PatientBirthDate'] != null && backendData['PatientBirthDate'].toString().trim().isNotEmpty) {
+          finalBirthDate = backendData['PatientBirthDate'];
+        }
+      }
+
+      // --- 4. ADIM: C# BACKEND (SQL) İÇİN VERİ FORMATLAMA VE API İSTEĞİ ---
+      // A. İsimleri Ad ve Soyad olarak ayırma (Listede null null çıkmasını engeller)
+      List<String> nameParts = finalPatientName.split(' ');
+      String firstName = nameParts.first;
+      String lastName = nameParts.length > 1 ? nameParts.sublist(1).join(' ') : "";
+
+      // B. Tarihi C# DateTime formatına çevirme (dd.MM.yyyy -> yyyy-MM-dd)
+      String formattedDate = "1990-01-01T00:00:00Z";
+      try {
+        List<String> dateParts = finalBirthDate.split('.');
+        if (dateParts.length == 3) {
+          formattedDate = "${dateParts[2]}-${dateParts[1]}-${dateParts[0]}T00:00:00Z";
+        }
+      } catch(e) {}
+
+      // C. Veritabanına Kayıt İsteği Atma
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        String? token = prefs.getString('jwt_token');
+
+        var response = await http.post(
+          Uri.parse('http://localhost:5038/api/Patient'),
+          headers: {
+            "Content-Type": "application/json",
+            if (token != null) "Authorization": "Bearer $token"
+          },
+          body: json.encode({
+            "TCIdentityNo": finalTc,
+            "FirstName": firstName,
+            "LastName": lastName,
+            "BirthDate": formattedDate,
+            "Gender": finalGender
+          }),
+        );
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          debugPrint("C# Backend: Hasta SQL veritabanına başarıyla kaydedildi.");
+        } else {
+          debugPrint("C# Backend Uyarısı: ${response.body}");
+        }
+      } catch (e) {
+        debugPrint("C# Backend'e ulaşılamadı: $e");
+      }
+
+      // --- 5. ADIM: Arayüz listesini güncelle ve Görüntüleri Hafızaya Al ---
+      setState(() {
+        realPatients.insert(0, {
+          'tcIdentity': finalTc,
+          'firstName': firstName, 
+          'lastName': lastName,
+          'fullName': finalPatientName,
+          'gender': finalGender,
+          'birthDate': finalBirthDate,
+          'zipPath': pythonZipPath,     // Geri dönüşte resimleri tekrar açmak için
+          'zipBytes': pickedFile.bytes, // Yapay zeka analiz butonu için
+          'fileName': pickedFile.name,
+          'maskPath': null,
+          'analysisResult': null,
+        });
+      });
+
+      if (!mounted) return;
+      
+      // --- 6. ADIM: PACS ekranına geçiş yap ---
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PacsScreen(
+            patientName: finalPatientName,
+            tcIdentity: finalTc,
+            doctorName: "Dr. Kullanıcı", 
+            initialZipPath: pythonZipPath, // Artık dosya ismini değil, Python'dan gelen GERÇEK yolu veriyoruz!
+            initialZipBytes: pickedFile.bytes, 
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -254,7 +383,6 @@ class _PatientListScreenState extends State<PatientListScreen> {
             ),
           ],
         ),
-        // --- YENİ EKLENEN GÜVENLİ ÇIKIŞ YAP BUTONU ---
         actions: [
           TextButton.icon(
             style: TextButton.styleFrom(
@@ -283,6 +411,20 @@ class _PatientListScreenState extends State<PatientListScreen> {
           : userRole == 'Admin'
               ? _buildAdminDashboard()
               : _buildPatientList(),
+      
+      // --- YENİ EKLENEN KISIM: SAĞ ALT YÜKLEME BUTONU ---
+      // Sadece admin olmayanlar (doktorlar vb.) bu butonu görebilir
+      floatingActionButton: userRole != 'Admin' 
+          ? FloatingActionButton.extended(
+              onPressed: _pickAndAddPatient, // Bir önceki adımda yazdığımız fonksiyonu çağırır
+              backgroundColor: Colors.teal,
+              icon: const Icon(Icons.add_to_drive, color: Colors.white),
+              label: const Text(
+                "Yeni Hasta MR Yükle",
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            )
+          : null,
     );
   }
 
@@ -659,6 +801,17 @@ class _PatientListScreenState extends State<PatientListScreen> {
                             patientName: "$fName $lName".trim(),
                             tcIdentity: tc,
                             doctorName: "Prof. Dr. Fatma Şule Geredelioğlu",
+                            initialZipPath: patient['zipPath'], 
+                            initialZipBytes: patient['zipBytes'],
+                            initialZipFilename: patient['fileName'],
+                            initialMaskPath: patient['maskPath'],
+                            initialAnalysisResult: patient['analysisResult'],
+                            onAnalysisCompleted: (mask, result) {
+                              setState(() {
+                                patient['maskPath'] = mask;
+                                patient['analysisResult'] = result;
+                              });
+                            },
                           ),
                         ),
                       );
@@ -695,35 +848,64 @@ class _PatientListScreenState extends State<PatientListScreen> {
                                       const TextStyle(color: Colors.black54))),
                           Expanded(
                               flex: 1,
-                              child: Row(children: [
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
                                 IconButton(
-                                  tooltip: 'MR ZIP Yükle ve AI başlat',
-                                  onPressed: () async {
-                                    // Dosya seç ve backend'e gönder
-                                    FilePickerResult? result =
-                                        await FilePicker.platform.pickFiles(
-                                      type: FileType.custom,
-                                      allowedExtensions: ['zip'],
-                                      withData: true,
+                                  tooltip: 'Hastayı Kalıcı Olarak Sil',
+                                  onPressed: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text("Hastayı Sistemden Sil"),
+                                        content: Text("${patient['firstName']} ${patient['lastName']} isimli hastayı sistemden kalıcı olarak silmek istediğinize emin misiniz?"),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () => Navigator.pop(context),
+                                            child: const Text("İptal", style: TextStyle(color: Colors.grey)),
+                                          ),
+                                          ElevatedButton(
+                                            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+                                            
+                                            // --- VERİTABANINDAN SİLME İŞLEMİ BURADA BAŞLIYOR ---
+                                            onPressed: () async {
+                                              // 1. Ekrandan anında sil (Kullanıcıyı bekletmemek için)
+                                              setState(() {
+                                                realPatients.removeAt(index); 
+                                              });
+                                              Navigator.pop(context); // Onay penceresini kapatır
+
+                                              // 2. C# Backend'den (SQL Veritabanı) Kalıcı Olarak Sil
+                                              int? pId = patient['patientID'] ?? patient['patientId'];
+                                              if (pId != null) {
+                                                try {
+                                                  final prefs = await SharedPreferences.getInstance();
+                                                  String? token = prefs.getString('jwt_token');
+                                                  
+                                                  await http.delete(
+                                                    Uri.parse('http://localhost:5038/api/Patient/$pId'),
+                                                    headers: {
+                                                      "Content-Type": "application/json",
+                                                      if (token != null) "Authorization": "Bearer $token"
+                                                    },
+                                                  );
+                                                } catch (e) {
+                                                  debugPrint("Veritabanından silinirken hata oluştu: $e");
+                                                }
+                                              }
+                                            },
+                                            // --------------------------------------------------
+                                            
+                                            child: const Text("Kalıcı Sil", style: TextStyle(color: Colors.white)),
+                                          ),
+                                        ],
+                                      ),
                                     );
-                                    if (result != null) {
-                                      final pickedFile = result.files.single;
-                                      final bytes = pickedFile.bytes;
-                                      final name = pickedFile.name;
-                                      if (bytes != null) {
-                                        await _uploadAndAnalyze(patient, null,
-                                            fileBytes: bytes, filename: name);
-                                      } else if (!kIsWeb && pickedFile.path != null) {
-                                        await _uploadAndAnalyze(patient, pickedFile.path);
-                                      }
-                                    }
                                   },
-                                  icon: const Icon(Icons.upload_file,
-                                      color: Colors.teal),
+                                  icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
                                 ),
                                 const SizedBox(width: 6),
-                                const Icon(Icons.arrow_forward_ios,
-                                    size: 14, color: Colors.grey)
+                                const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey)
                               ])),
                         ],
                       ),
@@ -831,6 +1013,16 @@ class _PatientListScreenState extends State<PatientListScreen> {
               initialZipBytes: fileBytes,
               initialZipFilename: filename,
               initialStudyId: studyId,
+              initialMaskPath: patient['maskPath'],
+              initialAnalysisResult: patient['analysisResult'],
+              onAnalysisCompleted: (mask, result) {
+                setState(() {
+                  patient['maskPath'] = mask;
+                  patient['analysisResult'] = result;
+                  patient['zipPath'] = selectedZipPath ?? filePath; // Dosyayı da tut
+                  patient['zipBytes'] = fileBytes; // Dosyayı da tut
+                });
+              },
             ),
           ),
         );

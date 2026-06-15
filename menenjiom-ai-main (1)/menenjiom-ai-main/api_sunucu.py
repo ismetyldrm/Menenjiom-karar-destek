@@ -26,6 +26,8 @@ async def analyze_mri(file: UploadFile = File(...)):
     case_id = file.filename.split('.')[0]
     raw_folder = os.path.join(TEMP_DIR, case_id)
     
+    if os.path.exists(raw_folder):
+        shutil.rmtree(raw_folder)
     os.makedirs(raw_folder, exist_ok=True)
     
     file_path = os.path.join(raw_folder, file.filename)
